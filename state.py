@@ -8,6 +8,11 @@ from langgraph.graph.message import add_messages
 from dataclasses import dataclass, field
 
 
+def set_value(existing, new):
+    """简单的值替换 reducer - 总是使用新值"""
+    return new
+
+
 @dataclass
 class DebateRecord:
     """辩论记录"""
@@ -42,7 +47,7 @@ class ParliamentState(TypedDict):
     
     Attributes:
         messages: 所有消息历史（自动去重合并）
-        current_speaker: 当前发言者
+        current_speaker: 当前发言者（使用 set_value reducer 允许更新）
         topic: 当前辩论议题
         turn_count: 当前回合数
         max_turns: 最大回合数
@@ -53,7 +58,7 @@ class ParliamentState(TypedDict):
         mode: 当前模式 ("debate", "pmqs", "vote")
     """
     messages: Annotated[List, add_messages]
-    current_speaker: str
+    current_speaker: Annotated[str, set_value]
     topic: str
     turn_count: int
     max_turns: int

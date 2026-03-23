@@ -54,8 +54,10 @@ DEBATE_CONFIG = {
 # 模型配置（使用 Ollama 本地模型）
 LLM_CONFIG = {
     "provider": "ollama",
-    "base_url": "http://localhost:11434",
+    "base_url": "http://localhost:11434",  # 本地使用
+    # "base_url": "http://192.168.x.x:11434",  # 远程电脑 - 修改为实际 IP
     "model": "qwen2.5:7b",
+    # "model": "qwen3.5:cloud",  # 远程电脑的模型
     # 或者使用云端模型：
     # "provider": "openai",
     # "model": "gpt-4o",
