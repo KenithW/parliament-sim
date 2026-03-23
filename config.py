@@ -54,11 +54,12 @@ DEBATE_CONFIG = {
 # 模型配置（使用 Ollama 本地模型）
 LLM_CONFIG = {
     "provider": "ollama",
-    "base_url": "http://localhost:11434",  # 本地使用
-    # "base_url": "http://192.168.x.x:11434",  # 远程电脑 - 修改为实际 IP
-    "model": "qwen2.5:7b",
-    # "model": "qwen3.5:cloud",  # 远程电脑的模型
+     "base_url": "http://localhost:11434",
+     "model": "qwen3.5:cloud",
     # 或者使用云端模型：
-    # "provider": "openai",
-    # "model": "gpt-4o",
+    # "provider": "qwen",
+    # "model": "qwen3.5-plus",
+    # "base_url": "https://coding.dashscope.aliyuncs.com/v1",
+    # "api_key": "sk-sp-ba4df9b03dd44e3f932ff94db3358db6",  # 替换为你的 API Key
 }
+
