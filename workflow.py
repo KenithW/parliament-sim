@@ -9,9 +9,10 @@ Parliament Debate Workflow - Enhanced Version
 """
 
 from langgraph.graph import StateGraph, START, END
-from typing import TypedDict
+from pathlib import Path
 import sys
-sys.path.insert(0, 'D:\\PyCharmProgram\\parliament-sim')
+
+sys.path.insert(0, str(Path(__file__).parent))
 
 from state import ParliamentState, DebateRecord, create_initial_state
 from config import PARTIES, LLM_CONFIG, DEBATE_CONFIG
@@ -23,28 +24,24 @@ from agents.shadow_chancellor import shadow_chancellor_node
 from agents.backbencher import backbencher_node
 from tools.voting import vote_node, format_vote_result
 from tools.pmqs import run_pmq_session
+from strategies.base_strategy import DebateStrategy
 
 
 def create_llm():
     """
     创建 LLM 实例
     
-    支持 Ollama 本地模型和 OpenAI 云端模型
+    支持 Ollama 本地模型
     """
-    if LLM_CONFIG["provider"] == "ollama":
-        from langchain_ollama import ChatOllama
-        llm = ChatOllama(
-            base_url=LLM_CONFIG["base_url"],
-            model=LLM_CONFIG["model"],
-            temperature=0.7,
-        )
-    else:
-        from langchain_openai import ChatOpenAI
-        llm = ChatOpenAI(
-            model=LLM_CONFIG["model"],
-            temperature=0.7,
-        )
-    return llm
+    if LLM_CONFIG["provider"] != "ollama":
+        raise ValueError("当前项目只支持 Ollama，请将 config.py 中的 LLM_CONFIG['provider'] 设为 'ollama'")
+
+    from langchain_ollama import ChatOllama
+    return ChatOllama(
+        base_url=LLM_CONFIG["base_url"],
+        model=LLM_CONFIG["model"],
+        temperature=0.7,
+    )
 
 
 def should_continue_debate(state: ParliamentState) -> str:
@@ -107,9 +104,6 @@ def build_parliament_graph():
     
     # 定义流程
     workflow.add_edge(START, "speaker")
-    
-    # 议长开场后进入 PM 发言
-    workflow.add_edge("speaker", "pm")
     
     # PM 发言后到 LO
     workflow.add_edge("pm", "lo")
@@ -264,3 +258,116 @@ if __name__ == "__main__":
     # 示例：运行完整议程
     topic = "是否应该增加 NHS（国家医疗服务）的预算？"
     run_full_session(topic, max_turns=8)
+
+
+# ============================================================================
+# 实验模式支持
+# ============================================================================
+
+def build_experiment_graph(strategy: DebateStrategy):
+    """
+    构建用于实验的辩论图（支持策略注入）
+    
+    Args:
+        strategy: 辩论策略
+    
+    Returns:
+        编译后的 LangGraph
+    """
+    from langgraph.graph import StateGraph, START, END
+    
+    # 创建状态图
+    workflow = StateGraph(ParliamentState)
+    
+    # 创建 LLM 实例
+    llm = create_llm()
+    
+    # 获取政党配置
+    gov_party = PARTIES["conservative"]
+    opp_party = PARTIES["labour"]
+    
+    # 添加节点（注入策略）
+    workflow.add_node("speaker", lambda s: speaker_node(s, llm))
+    workflow.add_node("pm_opening", lambda s: pm_node(s, llm, gov_party, strategy))
+    workflow.add_node("lo_response", lambda s: lo_node(s, llm, opp_party, strategy))
+    workflow.add_node("chancellor", lambda s: chancellor_node(s, llm, gov_party, strategy))
+    workflow.add_node("shadow_chancellor", lambda s: shadow_chancellor_node(s, llm, opp_party, strategy))
+    workflow.add_node("pm_rebuttal", lambda s: pm_node(s, llm, gov_party, strategy))
+    workflow.add_node("lo_closing", lambda s: lo_node(s, llm, opp_party, strategy))
+    workflow.add_node("vote", lambda s: vote_node(s))
+    
+    # 简化的流程（6 轮）
+    # Round 1: Speaker → PM (开场)
+    # Round 2: LO
+    # Round 3: Chancellor
+    # Round 4: Shadow Chancellor
+    # Round 5: PM (反驳)
+    # Round 6: LO (总结) → Vote
+    
+    workflow.add_edge(START, "speaker")
+    workflow.add_edge("speaker", "pm_opening")
+    workflow.add_edge("pm_opening", "lo_response")
+    workflow.add_edge("lo_response", "chancellor")
+    workflow.add_edge("chancellor", "shadow_chancellor")
+    workflow.add_edge("shadow_chancellor", "pm_rebuttal")
+    workflow.add_edge("pm_rebuttal", "lo_closing")
+    workflow.add_edge("lo_closing", "vote")
+    workflow.add_edge("vote", END)
+    
+    # 编译图
+    app = workflow.compile()
+    
+    return app
+
+
+def run_experiment_debate(topic: str, strategy: DebateStrategy, max_turns: int = 6):
+    """
+    运行实验辩论（带策略）
+    
+    Args:
+        topic: 议题
+        strategy: 策略
+        max_turns: 最大回合数（默认 6 轮）
+    
+    Returns:
+        最终状态
+    """
+    print(f"\n{'='*60}")
+    print(f"🧪 实验辩论 - 策略：{strategy.name()}")
+    print(f"议题：{topic}")
+    print(f"{'='*60}\n")
+    
+    # 创建初始状态
+    initial_state = create_initial_state(topic, max_turns, mode="experiment")
+    
+    # 构建并运行图
+    app = build_experiment_graph(strategy)
+    
+    # 运行辩论
+    final_state = None
+    for event in app.stream(initial_state, stream_mode="values"):
+        if event["debate_records"]:
+            last_record = event["debate_records"][-1]
+            print(f"\n[{last_record.speaker.upper()}] (回合 {last_record.turn})")
+            print(f"{'-'*40}")
+            content = last_record.content[:200]
+            if len(last_record.content) > 200:
+                content += "..."
+            print(content)
+        
+        final_state = event
+    
+    # 打印总结
+    print(f"\n{'='*60}")
+    print(f"🏛️  辩论结束 - 共 {final_state['turn_count']} 回合")
+    
+    if final_state.get("votes"):
+        print(f"\n📊 投票结果:")
+        print(f"  赞成：{final_state['votes'].get('ayes', 0)}")
+        print(f"  反对：{final_state['votes'].get('nos', 0)}")
+        print(f"  弃权：{final_state['votes'].get('abstentions', 0)}")
+        print(f"  结果：{final_state['votes'].get('result', 'unknown')}")
+    
+    print(f"{'='*60}\n")
+    
+    return final_state

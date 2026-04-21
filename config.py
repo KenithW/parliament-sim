@@ -54,12 +54,17 @@ DEBATE_CONFIG = {
 # 模型配置（使用 Ollama 本地模型）
 LLM_CONFIG = {
     "provider": "ollama",
-     "base_url": "http://localhost:11434",
-     "model": "qwen3.5:cloud",
-    # 或者使用云端模型：
-    # "provider": "qwen",
-    # "model": "qwen3.5-plus",
-    # "base_url": "https://coding.dashscope.aliyuncs.com/v1",
-    # "api_key": "sk-sp-ba4df9b03dd44e3f932ff94db3358db6",  # 替换为你的 API Key
+    "base_url": "http://localhost:11434",
+    "model": "qwen2.5:7b",
+}
+
+# 实验配置
+EXPERIMENT_CONFIG = {
+    "max_turns": 6,              # 缩短到 6 轮
+    "evaluate_opening": True,    # 评估开场
+    "evaluate_closing": True,    # 评估总结
+    "weight_opening": 0.5,       # 开场权重
+    "weight_closing": 0.5,       # 总结权重
+    "speakers": ["pm", "lo", "chancellor", "shadow_chancellor", "pm", "lo"],
 }
 
