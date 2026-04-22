@@ -33,6 +33,11 @@ wheels/
 .env
 .env.local
 
+# Generated experiment outputs
+results/
+research_results/
+debates/
+
 # OS files
 .DS_Store
 Thumbs.db

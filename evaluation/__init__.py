@@ -1,9 +1,4 @@
-"""
-Evaluation System - 辩论评估系统
+from evaluation.evaluator import DebateEvaluator
+from evaluation.voting import VotingPanel
 
-使用 LLM 作为裁判评估辩论质量
-"""
-
-from evaluation.evaluator import DebateEvaluator, EvaluationMetrics
-
-__all__ = ["DebateEvaluator", "EvaluationMetrics"]
+__all__ = ["DebateEvaluator", "VotingPanel"]

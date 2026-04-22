@@ -1,204 +1,113 @@
-"""
-Experiment Runner - 实验运行器
+"""Run the same debate flow under multiple strategies."""
 
-负责运行策略对比实验
-"""
-
-from typing import List, Dict
-from pathlib import Path
+import time
 from datetime import datetime
+from typing import List
 
-from strategies.base_strategy import DebateStrategy
+from config import OUTPUT_ROOT
 from evaluation.evaluator import DebateEvaluator
+from evaluation.voting import VotingPanel
 from experiments.results import ExperimentResults
-from state import create_initial_state, DebateRecord
-from config import LLM_CONFIG
+from simulation.engine import run_debate
+from simulation.roles import ROLES
+from strategies.base_strategy import DebateStrategy
 
 
 class ExperimentRunner:
-    """
-    实验运行器
-    
-    运行多种策略的对比实验，收集评估数据
-    """
-    
-    def __init__(self, strategies: List[DebateStrategy], llm):
-        """
-        初始化运行器
-        
-        Args:
-            strategies: 策略列表
-            llm: LangChain LLM 对象
-        """
+    def __init__(self, strategies: List[DebateStrategy], llm, evaluator_mode: str = "heuristic"):
         self.strategies = strategies
         self.llm = llm
-        self.evaluator = DebateEvaluator(llm)
-    
+        self.evaluator = DebateEvaluator(llm=llm, mode=evaluator_mode)
+        self.voting_panel = VotingPanel()
+        self.evaluator_mode = evaluator_mode
+
     def run_comparison(
         self,
         topic: str,
-        num_runs: int = 5,
-        output_dir: str = None
+        num_runs: int = 3,
+        output_dir: str = None,
+        max_turns: int = 7,
+        show_debate: bool = False,
+        **_,
     ) -> ExperimentResults:
-        """
-        运行对比实验
-        
-        Args:
-            topic: 辩论议题
-            num_runs: 每种策略运行次数
-            output_dir: 输出目录
-        
-        Returns:
-            ExperimentResults: 实验结果
-        """
         if output_dir is None:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_dir = f"results/experiment_{timestamp}"
-        
+            output_dir = f"{OUTPUT_ROOT}/experiment_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
         results = ExperimentResults(topic=topic)
-        
-        print("\n" + "=" * 70)
-        print("🧪 UK Parliament Algorithm Comparison Experiment")
-        print("    英国议会模拟算法对比实验")
-        print("=" * 70)
-        print(f"\n📌 议题：{topic}")
-        print(f"📌 策略数量：{len(self.strategies)}")
-        print(f"📌 每种运行次数：{num_runs}")
-        print(f"📌 输出目录：{output_dir}")
-        print("\n开始实验...\n")
-        
+        print(f"Topic: {topic}", flush=True)
+        print(f"Strategies: {', '.join(s.name() for s in self.strategies)}", flush=True)
+        print(f"Runs per strategy: {num_runs}", flush=True)
+        print(f"Evaluator: {self.evaluator_mode}", flush=True)
+        print(f"Output: {output_dir}\n", flush=True)
+
         for strategy in self.strategies:
-            print(f"\n{'=' * 70}")
-            print(f"运行策略：{strategy.name()}")
-            print(f"{'=' * 70}")
-            
-            strategy_results = []
-            
-            for run in range(num_runs):
-                print(f"\n  ▶ 第 {run + 1}/{num_runs} 次运行...")
-                
-                try:
-                    # 运行辩论
-                    debate_state = self.run_single_debate(
-                        topic=topic,
-                        strategy=strategy,
-                        run_number=run + 1
-                    )
-                    
-                    # 评估辩论
-                    evaluation = self.evaluator.evaluate_debate(
-                        debate_records=debate_state["debate_records"],
-                        topic=topic
-                    )
-                    
-                    # 判定胜负
-                    vote_result = debate_state.get("votes", {})
-                    win_result = self._determine_winner(
-                        evaluation=evaluation,
-                        vote_result=vote_result
-                    )
-                    
-                    # 保存辩论记录
-                    debate_file = results.save_debate_record(
-                        debate_records=debate_state["debate_records"],
-                        strategy=strategy.name(),
-                        run_number=run + 1,
-                        output_dir=output_dir
-                    )
-                    
-                    # 收集结果
-                    run_result = {
-                        "strategy": strategy.name(),
-                        "run_number": run + 1,
-                        "topic": topic,
-                        "opening_score": evaluation["opening"]["overall_score"],
-                        "closing_score": evaluation["closing"]["overall_score"],
-                        "overall_score": evaluation["overall"]["overall_score"],
-                        "win_result": win_result,
-                        "debate_file": debate_file,
-                        "detailed_scores": evaluation
-                    }
-                    
-                    strategy_results.append(run_result)
-                    results.add_result(run_result)
-                    
-                    print(f"  ✓ 完成 - 得分：{run_result['overall_score']:.2f}, 结果：{win_result}")
-                    
-                except Exception as e:
-                    print(f"  ✗ 失败：{e}")
-                    import traceback
-                    traceback.print_exc()
-            
-            # 打印策略平均分
-            if strategy_results:
-                avg_score = sum(r["overall_score"] for r in strategy_results) / len(strategy_results)
-                wins = sum(1 for r in strategy_results if r["win_result"] == "WIN")
-                print(f"\n  📊 {strategy.name()} 平均得分：{avg_score:.2f}, 胜率：{wins}/{num_runs}")
-        
-        # 保存结果
-        results.to_csv(output_dir)
-        
-        # 打印摘要
-        print("\n" + results.summary())
-        
-        print(f"\n✅ 实验完成！结果已保存至：{output_dir}")
-        print(f"   - results.csv: 主要统计数据")
-        print(f"   - detailed_scores.csv: 详细维度得分")
-        print(f"   - metadata.json: 实验元数据")
-        print(f"   - debates/: 辩论记录\n")
-        
+            for run_number in range(1, num_runs + 1):
+                start = time.perf_counter()
+                if show_debate:
+                    print(f"\n--- {strategy.name()} run {run_number}: live debate ---", flush=True)
+                state = run_debate(
+                    self.llm,
+                    topic,
+                    strategy,
+                    max_turns=max_turns,
+                    on_turn=_print_turn if show_debate else None,
+                    on_turn_start=_print_turn_start if show_debate else None,
+                )
+                duration = time.perf_counter() - start
+                evaluation = self.evaluator.evaluate(state.records, topic)
+                vote = self.voting_panel.vote(evaluation)
+                transcript = results.save_transcript(
+                    state.records,
+                    strategy.name(),
+                    run_number,
+                    output_dir,
+                    evaluation=evaluation,
+                    vote=vote,
+                )
+
+                row = {
+                    "experiment_id": results.experiment_id,
+                    "strategy": strategy.name(),
+                    "run": run_number,
+                    "run_number": run_number,
+                    "topic": topic,
+                    "score_winner": evaluation["comparison"]["winner"],
+                    "winner": vote["winner"],
+                    "government_score": round(evaluation["government"]["overall"], 3),
+                    "opposition_score": round(evaluation["opposition"]["overall"], 3),
+                    "government_margin": round(evaluation["comparison"]["margin"], 3),
+                    "total_quality": round(evaluation["comparison"]["total_quality"], 3),
+                    "government_votes": vote["government_votes"],
+                    "opposition_votes": vote["opposition_votes"],
+                    "abstentions": vote["abstentions"],
+                    "vote_margin": vote["vote_margin"],
+                    "duration_s": round(duration, 3),
+                    "turns": state.turn_count,
+                    "transcript": transcript,
+                }
+                results.add(row)
+                print(
+                    f"{strategy.name()} run {run_number}: "
+                    f"quality={row['total_quality']:.2f}, "
+                    f"margin={row['government_margin']:+.2f}, "
+                    f"vote={row['government_votes']}-{row['opposition_votes']}-{row['abstentions']}, "
+                    f"winner={row['winner']}",
+                    flush=True,
+                )
+
+        results.save(output_dir)
+        print("\n" + results.summary(), flush=True)
         return results
-    
-    def run_single_debate(
-        self,
-        topic: str,
-        strategy: DebateStrategy,
-        run_number: int
-    ) -> Dict:
-        """
-        运行单场辩论
-        
-        Args:
-            topic: 议题
-            strategy: 策略
-            run_number: 运行编号
-        
-        Returns:
-            最终状态字典
-        """
-        # 导入 workflow
-        from workflow import run_experiment_debate
-        
-        # 运行辩论
-        final_state = run_experiment_debate(
-            topic=topic,
-            strategy=strategy,
-            max_turns=6
-        )
-        
-        return final_state
-    
-    def _determine_winner(self, evaluation: Dict, vote_result: Dict) -> str:
-        """
-        判定胜负
-        
-        规则：
-        - 有投票结果时，以投票为准
-        - 无投票时，以评分为准（>=7.0 为 WIN）
-        
-        Args:
-            evaluation: 评估结果
-            vote_result: 投票结果
-        
-        Returns:
-            "WIN" 或 "LOSS"
-        """
-        if vote_result and "ayes" in vote_result:
-            # 有投票结果，以投票为准
-            ayes = vote_result.get("ayes", 0)
-            nos = vote_result.get("nos", 0)
-            return "WIN" if ayes > nos else "LOSS"
-        else:
-            # 无投票，以评分为准
-            score = evaluation["overall"]["overall_score"]
-            return "WIN" if score >= 7.0 else "LOSS"
+
+
+def _print_turn(record) -> None:
+    role = ROLES[record.role]
+    print(f"\n[Turn {record.turn}] {role.title} ({record.side})", flush=True)
+    print(f"Strategy move: {record.strategy}", flush=True)
+    print(record.content.strip() or "[empty speech]", flush=True)
+
+
+def _print_turn_start(turn: int, role_id: str, strategy_move: str) -> None:
+    role = ROLES[role_id]
+    print(f"\nGenerating Turn {turn}: {role.title} ({role.side})", flush=True)
+    print(f"Strategy move: {strategy_move}", flush=True)
