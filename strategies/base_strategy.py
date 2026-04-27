@@ -30,3 +30,7 @@ class DebateStrategy(ABC):
     def generate_argument(self, role: str, topic: str, context: Dict) -> StrategyAdvice:
         """Backward-compatible alias used by older callers."""
         return self.advise(role, topic, context)
+
+    def observe_result(self, run_result: Dict) -> None:
+        """Optional hook for strategies that learn across runs."""
+        return None

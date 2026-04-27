@@ -6,7 +6,8 @@ import sys
 from config import DEFAULT_TOPIC, LLM_CONFIG
 from evaluation.evaluator import DebateEvaluator
 from evaluation.voting import VotingPanel
-from run_experiment import create_llm, make_strategies
+from run_experiment import create_llm, make_strategy
+from strategies import STRATEGY_REGISTRY
 from simulation.engine import run_debate
 from simulation.roles import ROLES
 
@@ -15,7 +16,9 @@ def main() -> None:
     _utf8()
     parser = argparse.ArgumentParser(description="Run one parliament-style multi-agent debate.")
     parser.add_argument("--topic", "-t", default=DEFAULT_TOPIC)
-    parser.add_argument("--strategy", "-s", default="heuristic_rule", choices=["baseline", "heuristic_rule", "genetic"])
+    parser.add_argument("--strategy", "-s", default="heuristic_rule", choices=list(STRATEGY_REGISTRY.keys()))
+    parser.add_argument("--monte-carlo-samples", type=int, default=12)
+    parser.add_argument("--bandit-epsilon", type=float, default=0.25)
     parser.add_argument("--turns", "-n", type=int, default=7)
     parser.add_argument("--temperature", type=float, default=0.6)
     parser.add_argument("--max-tokens", type=int, default=180)
@@ -25,7 +28,7 @@ def main() -> None:
     args = parser.parse_args()
 
     llm = create_llm(args.temperature, args.max_tokens, args.request_timeout, args.mock_llm)
-    strategy = make_strategies(args.strategy)[0]
+    strategy = make_strategy(args.strategy, args.monte_carlo_samples, args.bandit_epsilon)
     print(f"Model: {'mock' if args.mock_llm else LLM_CONFIG['model']}", flush=True)
     print(f"Strategy: {strategy.name()}", flush=True)
     print(f"Topic: {args.topic}", flush=True)

@@ -85,6 +85,9 @@ class ExperimentRunner:
                     "turns": state.turn_count,
                     "transcript": transcript,
                 }
+                strategy.observe_result(row)
+                if hasattr(strategy, "memory_snapshot"):
+                    row["strategy_memory"] = strategy.memory_snapshot()
                 results.add(row)
                 print(
                     f"{strategy.name()} run {run_number}: "

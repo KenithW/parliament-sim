@@ -27,7 +27,9 @@ class ExperimentResults:
     def save(self, output_dir: str) -> Path:
         output = Path(output_dir)
         output.mkdir(parents=True, exist_ok=True)
-        self._write_runs(output / "runs.csv")
+        self._write_runs(output / "all_runs.csv", self.rows)
+        for strategy, rows in self._grouped().items():
+            self._write_runs(output / f"{strategy}_runs.csv", rows)
         self._write_summary(output / "summary.csv")
         (output / "metadata.json").write_text(
             json.dumps(
@@ -104,7 +106,7 @@ class ExperimentResults:
             )
         return "\n".join(lines)
 
-    def _write_runs(self, path: Path) -> None:
+    def _write_runs(self, path: Path, rows: List[Dict]) -> None:
         fields = [
             "experiment_id",
             "strategy",
@@ -122,13 +124,17 @@ class ExperimentResults:
             "vote_margin",
             "duration_s",
             "turns",
+            "strategy_memory",
             "transcript",
         ]
         with path.open("w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=fields)
             writer.writeheader()
-            for row in self.rows:
-                writer.writerow({field: row.get(field, "") for field in fields})
+            for row in rows:
+                cleaned = {field: row.get(field, "") for field in fields}
+                if isinstance(cleaned.get("strategy_memory"), (dict, list)):
+                    cleaned["strategy_memory"] = json.dumps(cleaned["strategy_memory"], ensure_ascii=False)
+                writer.writerow(cleaned)
 
     def _write_summary(self, path: Path) -> None:
         fields = [

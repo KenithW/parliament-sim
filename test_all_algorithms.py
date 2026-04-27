@@ -9,7 +9,14 @@ from tools.mock_llm import MockLLM
 
 def test_strategy_registry():
     strategies = make_strategies("all")
-    assert [strategy.name() for strategy in strategies] == ["baseline", "heuristic_rule", "genetic"]
+    assert [strategy.name() for strategy in strategies] == [
+        "baseline",
+        "heuristic_rule",
+        "genetic",
+        "react",
+        "monte_carlo",
+        "bandit",
+    ]
 
 
 def test_single_debate_runs():

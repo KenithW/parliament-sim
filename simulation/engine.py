@@ -75,11 +75,19 @@ def _build_context(state: DebateState, side: str, turn: int) -> Dict:
         if record.side not in {side, "neutral"}:
             opponent_last = record.content
             break
+    government_records = [record for record in state.records if record.side == "government"]
+    opposition_records = [record for record in state.records if record.side == "opposition"]
+    strategy_history = [record.strategy for record in state.records if record.side != "neutral"]
     return {
         "turn": turn,
+        "phase": _phase(turn),
         "side": side,
         "history": state.records,
         "opponent_last": opponent_last,
+        "government_speeches": government_records,
+        "opposition_speeches": opposition_records,
+        "strategy_history": strategy_history,
+        "memory_summary": _memory_summary(government_records, opposition_records, strategy_history),
     }
 
 
@@ -121,6 +129,22 @@ def _history_snippet(records: List[DebateRecord], limit: int = 4) -> str:
         text = " ".join(record.content.split())[:220]
         lines.append(f"- {title}: {text}")
     return "\n".join(lines)
+
+
+def _phase(turn: int) -> str:
+    if turn <= 1:
+        return "opening"
+    if turn >= len(DEBATE_FLOW) - 2:
+        return "closing"
+    return "middle"
+
+
+def _memory_summary(government_records: List[DebateRecord], opposition_records: List[DebateRecord], strategy_history: List[str]) -> str:
+    return (
+        f"government_speeches={len(government_records)}, "
+        f"opposition_speeches={len(opposition_records)}, "
+        f"recent_strategy_moves={strategy_history[-4:]}"
+    )
 
 
 def _invoke_text(llm, prompt: str) -> str:
